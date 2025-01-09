@@ -1,6 +1,6 @@
-import { AxiosError } from 'axios';
-import { ApiResponse, FailedTuple, SuccessTuple } from '../';
 import { notification } from 'antd';
+import { AxiosError } from 'axios';
+import { ApiResponse, FailedTuple, ResponseType, SuccessTuple } from '../';
 
 /**
  * Response processing
@@ -9,9 +9,12 @@ import { notification } from 'antd';
  * @param ignoreCodes ignore error codes
  * @returns
  */
-export const apiInterceptors = <T = any, D = any>(promise: Promise<ApiResponse<T, D>>, ignoreCodes?: '*' | (number | string)[]) => {
+export const apiInterceptors = <T = any, D = any>(
+  promise: Promise<ApiResponse<T, D>>,
+  ignoreCodes?: '*' | (number | string)[],
+) => {
   return promise
-    .then<SuccessTuple<T, D>>((response) => {
+    .then<SuccessTuple<T, D>>(response => {
       const { data } = response;
       if (!data) {
         throw new Error('Network Error!');
@@ -28,10 +31,19 @@ export const apiInterceptors = <T = any, D = any>(promise: Promise<ApiResponse<T
       }
       return [null, data.data, data, response];
     })
-    .catch<FailedTuple>((err: Error | AxiosError) => {
+    .catch<FailedTuple<T, D>>((err: Error | AxiosError<T, D>) => {
+      let errMessage = err.message;
+      if (err instanceof AxiosError) {
+        try {
+          const { err_msg } = JSON.parse(err.request.response) as ResponseType<null>;
+          err_msg && (errMessage = err_msg);
+        } catch {
+          /* empty */
+        }
+      }
       notification.error({
         message: `Request error`,
-        description: err.message,
+        description: errMessage,
       });
       return [err, null, null, null];
     });

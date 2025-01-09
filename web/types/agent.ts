@@ -6,18 +6,23 @@ export type PostAgentHubUpdateParams = {
 };
 
 export type PostAgentQueryParams = {
+  page_index?: number;
+  page_size?: number;
+  name?: string;
+  description?: string;
+  author?: string;
+  email?: string;
+  type?: string;
+  version?: string;
+  storage_channel?: string;
+  storage_url?: string;
+};
+
+export type PostDbgptMyQueryParams = {
+  type: string | undefined;
+  name: string | undefined;
   page_index: number;
   page_size: number;
-  filter?: {
-    name?: string;
-    description?: string;
-    author?: string;
-    email?: string;
-    type?: string;
-    version?: string;
-    storage_channel?: string;
-    storage_url?: string;
-  };
 };
 
 export type IAgentPlugin = {
@@ -32,7 +37,7 @@ export type IAgentPlugin = {
   author: string;
   type: string;
   storage_channel: string;
-  created_at: string;
+  gmt_created: string;
 };
 
 export type PostAgentPluginResponse = {
@@ -41,6 +46,7 @@ export type PostAgentPluginResponse = {
   total_page: number;
   total_row_count: number;
   datas: IAgentPlugin[];
+  items: IAgentPlugin[];
 };
 
 export type IMyPlugin = {
@@ -56,6 +62,23 @@ export type IMyPlugin = {
   use_count: number;
   created_at: string;
   description: string;
+  data?: any;
 };
 
-export type PostAgentMyPluginResponse = IMyPlugin[];
+export type PostAgentMyPluginResponse = {
+  items: IMyPlugin[];
+};
+
+export type GetDBGPTsListResponse = {
+  app_code: string;
+  app_describe: string;
+  app_name: string;
+
+  language: string;
+  sys_code: string;
+  updated_at: string;
+  team_mode: string;
+  id: number;
+  user_code: string;
+  created_at: string;
+}[];

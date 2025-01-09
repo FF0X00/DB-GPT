@@ -4,11 +4,9 @@ __pycache__/
 *$py.class
 
 # C extensions
-*.so
-
 message/
-
-.env
+dbgpt/util/extensions/
+.env*
 .vscode
 .idea
 .chroma
@@ -64,7 +62,7 @@ coverage.xml
 .pytest_cache/
 
 # Translations
-*.mo
+# *.mo
 *.pot
 
 # Django stuff:
@@ -159,6 +157,7 @@ thirdparty
 #web
 # dependencies
 /web/node_modules
+/web/yarn.lock
 
 .idea
 # next.js
@@ -180,3 +179,9 @@ thirdparty
 # typescript
 *.tsbuildinfo
 /web/next-env.d.ts
+
+# Ignore awel DAG visualization files
+/examples/**/*.gv
+/examples/**/*.gv.pdf
+/i18n/locales/**/**/*_ai_translated.po
+/i18n/locales/**/**/*~

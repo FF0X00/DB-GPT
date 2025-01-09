@@ -1,10 +1,10 @@
 import json
 from typing import Any, Dict
 
-from dbgpt.core.interface.message import ViewMessage, AIMessage
 from dbgpt.app.scene import BaseChat, ChatScene
-from dbgpt.util.json_utils import DateTimeEncoder
+from dbgpt.core.interface.message import AIMessage, ViewMessage
 from dbgpt.util.executor_utils import blocking_func_to_async
+from dbgpt.util.json_utils import EnhancedJSONEncoder
 from dbgpt.util.tracer import trace
 
 
@@ -19,6 +19,7 @@ class ExcelLearning(BaseChat):
         select_param: str = None,
         excel_reader: Any = None,
         model_name: str = None,
+        user_name: str = None,
     ):
         chat_mode = ChatScene.ExcelLearning
         """ """
@@ -30,6 +31,7 @@ class ExcelLearning(BaseChat):
             "current_user_input": user_input,
             "select_param": select_param,
             "model_name": model_name,
+            "user_name": user_name,
         }
         super().__init__(chat_param=chat_param)
         if parent_mode:
@@ -45,13 +47,14 @@ class ExcelLearning(BaseChat):
         datas.insert(0, colunms)
 
         input_values = {
-            "data_example": json.dumps(datas, cls=DateTimeEncoder),
+            "data_example": json.dumps(datas, cls=EnhancedJSONEncoder),
             "file_name": self.excel_reader.excel_file_name,
         }
         return input_values
 
     def message_adjust(self):
         ### adjust learning result in messages
+        # TODO: Can't work in multi-rounds chat
         view_message = ""
         for message in self.current_message.messages:
             if message.type == ViewMessage.type:

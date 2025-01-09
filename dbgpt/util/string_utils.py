@@ -1,4 +1,6 @@
 import re
+import string
+from typing import Dict
 
 
 def is_all_chinese(text):
@@ -6,6 +8,11 @@ def is_all_chinese(text):
     pattern = re.compile(r"^[一-龥]+$")
     match = re.match(pattern, text)
     return match is not None
+
+
+def contains_chinese(text):
+    """Check if the text contains Chinese characters."""
+    return re.search(r"[\u4e00-\u9fa5]", text) is not None
 
 
 def is_number_chinese(text):
@@ -34,7 +41,7 @@ def is_scientific_notation(string):
         return False
 
 
-def extract_content(long_string, s1, s2, is_include: bool = False):
+def extract_content(long_string, s1, s2, is_include: bool = False) -> Dict[int, str]:
     # extract text
     match_map = {}
     start_index = long_string.find(s1)
@@ -73,6 +80,17 @@ def extract_content_open_ending(long_string, s1, s2, is_include: bool = False):
     return match_map
 
 
+def str_to_bool(s):
+    if s.lower() in ("true", "t", "1", "yes", "y"):
+        return True
+    elif s.lower().startswith("true"):
+        return True
+    elif s.lower() in ("false", "f", "0", "no", "n"):
+        return False
+    else:
+        return False
+
+
 def _to_str(x, charset="utf8", errors="strict"):
     if x is None or isinstance(x, str):
         return x
@@ -81,3 +99,33 @@ def _to_str(x, charset="utf8", errors="strict"):
         return x.decode(charset, errors)
 
     return str(x)
+
+
+def remove_trailing_punctuation(s):
+    """Remove trailing punctuation from a string."""
+    punctuation = set(string.punctuation)
+    chinese_punctuation = {
+        "。",
+        "，",
+        "！",
+        "？",
+        "；",
+        "：",
+        "“",
+        "”",
+        "‘",
+        "’",
+        "（",
+        "）",
+        "【",
+        "】",
+        "—",
+        "…",
+        "《",
+        "》",
+    }
+    punctuation.update(chinese_punctuation)
+    while s and s[-1] in punctuation:
+        s = s[:-1]
+
+    return s

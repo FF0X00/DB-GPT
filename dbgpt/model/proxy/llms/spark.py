@@ -1,18 +1,12 @@
 import json
-import base64
-import hmac
-import hashlib
-from websockets.sync.client import connect
-from datetime import datetime
-from typing import List
-from time import mktime
-from urllib.parse import urlencode
-from urllib.parse import urlparse
-from wsgiref.handlers import format_date_time
-from dbgpt.core.interface.message import ModelMessage, ModelMessageRoleType
-from dbgpt.model.proxy.llms.proxy_model import ProxyModel
+import os
+from concurrent.futures import Executor
+from typing import Iterator, Optional
 
-SPARK_DEFAULT_API_VERSION = "v3"
+from dbgpt.core import MessageConverter, ModelOutput, ModelRequest
+from dbgpt.model.parameter import ProxyModelParameters
+from dbgpt.model.proxy.base import ProxyLLMClient
+from dbgpt.model.proxy.llms.proxy_model import ProxyModel, parse_model_request
 
 
 def getlength(text):
@@ -33,63 +27,15 @@ def checklen(text):
 def spark_generate_stream(
     model: ProxyModel, tokenizer, params, device, context_len=2048
 ):
-    model_params = model.get_params()
-    proxy_api_version = model_params.proxyllm_backend or SPARK_DEFAULT_API_VERSION
-    proxy_api_key = model_params.proxy_api_key
-    proxy_api_secret = model_params.proxy_api_secret
-    proxy_app_id = model_params.proxy_api_app_id
-
-    if proxy_api_version == SPARK_DEFAULT_API_VERSION:
-        url = "ws://spark-api.xf-yun.com/v3.1/chat"
-        domain = "generalv3"
-    else:
-        url = "ws://spark-api.xf-yun.com/v2.1/chat"
-        domain = "generalv2"
-
-    messages: List[ModelMessage] = params["messages"]
-
-    last_user_input = None
-    for index in range(len(messages) - 1, -1, -1):
-        print(f"index: {index}")
-        if messages[index].role == ModelMessageRoleType.HUMAN:
-            last_user_input = {"role": "user", "content": messages[index].content}
-            del messages[index]
-            break
-
-    history = []
-    # Add history conversation
-    for message in messages:
-        # There is no role for system in spark LLM
-        if message.role == ModelMessageRoleType.HUMAN or ModelMessageRoleType.SYSTEM:
-            history.append({"role": "user", "content": message.content})
-        elif message.role == ModelMessageRoleType.AI:
-            history.append({"role": "assistant", "content": message.content})
-        else:
-            pass
-
-    question = checklen(history + [last_user_input])
-
-    print('last_user_input.get("content")', last_user_input.get("content"))
-    data = {
-        "header": {"app_id": proxy_app_id, "uid": str(params.get("request_id", 1))},
-        "parameter": {
-            "chat": {
-                "domain": domain,
-                "random_threshold": 0.5,
-                "max_tokens": context_len,
-                "auditing": "default",
-                "temperature": params.get("temperature"),
-            }
-        },
-        "payload": {"message": {"text": question}},
-    }
-
-    spark_api = SparkAPI(proxy_app_id, proxy_api_key, proxy_api_secret, url)
-    request_url = spark_api.gen_url()
-    return get_response(request_url, data)
+    client: SparkLLMClient = model.proxy_llm_client
+    request = parse_model_request(params, client.default_model, stream=True)
+    for r in client.sync_generate_stream(request):
+        yield r
 
 
 def get_response(request_url, data):
+    from websockets.sync.client import connect
+
     with connect(request_url) as ws:
         ws.send(json.dumps(data, ensure_ascii=False))
         result = ""
@@ -103,51 +49,127 @@ def get_response(request_url, data):
                     result += text[0]["content"]
                 if choices.get("status") == 2:
                     break
-            except Exception:
-                break
+            except Exception as e:
+                raise e
     yield result
 
 
-class SparkAPI:
+def extract_content(line: str):
+    if not line.strip():
+        return line
+    if line.startswith("data: "):
+        json_str = line[len("data: ") :]
+    else:
+        raise ValueError("Error line content ")
+
+    try:
+        data = json.loads(json_str)
+        if data == "[DONE]":
+            return ""
+
+        choices = data.get("choices", [])
+        if choices and isinstance(choices, list):
+            delta = choices[0].get("delta", {})
+            content = delta.get("content", "")
+            return content
+        else:
+            raise ValueError("Error line content ")
+    except json.JSONDecodeError:
+        return ""
+
+
+class SparkLLMClient(ProxyLLMClient):
     def __init__(
-        self, appid: str, api_key: str, api_secret: str, spark_url: str
-    ) -> None:
-        self.appid = appid
-        self.api_key = api_key
-        self.api_secret = api_secret
-        self.host = urlparse(spark_url).netloc
-        self.path = urlparse(spark_url).path
+        self,
+        model: Optional[str] = None,
+        model_alias: Optional[str] = "spark_proxyllm",
+        context_length: Optional[int] = 4096,
+        executor: Optional[Executor] = None,
+    ):
+        """
+        星火大模型API当前有Lite、Pro、Pro-128K、Max、Max-32K和4.0 Ultra六个版本
+        Spark4.0 Ultra 请求地址，对应的domain参数为4.0Ultra
+        Spark Max-32K请求地址，对应的domain参数为max-32k
+        Spark Max请求地址，对应的domain参数为generalv3.5
+        Spark Pro-128K请求地址，对应的domain参数为pro-128k：
+        Spark Pro请求地址，对应的domain参数为generalv3：
+        Spark Lite请求地址，对应的domain参数为lite：
+        https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html#_3-%E8%AF%B7%E6%B1%82%E8%AF%B4%E6%98%8E
+        """
+        self._model = model or os.getenv("XUNFEI_SPARK_API_MODEL")
+        self._api_base = os.getenv("PROXY_SERVER_URL")
+        self._api_password = os.getenv("XUNFEI_SPARK_API_PASSWORD")
+        if not self._model:
+            raise ValueError("model can't be empty")
+        if not self._api_base:
+            raise ValueError("api_base can't be empty")
+        if not self._api_password:
+            raise ValueError("api_password can't be empty")
 
-        self.spark_url = spark_url
-
-    def gen_url(self):
-        # 生成RFC1123格式的时间戳
-        now = datetime.now()
-        date = format_date_time(mktime(now.timetuple()))
-
-        # 拼接字符串
-        signature_origin = "host: " + self.host + "\n"
-        signature_origin += "date: " + date + "\n"
-        signature_origin += "GET " + self.path + " HTTP/1.1"
-
-        # 进行hmac-sha256进行加密
-        signature_sha = hmac.new(
-            self.api_secret.encode("utf-8"),
-            signature_origin.encode("utf-8"),
-            digestmod=hashlib.sha256,
-        ).digest()
-
-        signature_sha_base64 = base64.b64encode(signature_sha).decode(encoding="utf-8")
-
-        authorization_origin = f'api_key="{self.api_key}", algorithm="hmac-sha256", headers="host date request-line", signature="{signature_sha_base64}"'
-
-        authorization = base64.b64encode(authorization_origin.encode("utf-8")).decode(
-            encoding="utf-8"
+        super().__init__(
+            model_names=[model, model_alias],
+            context_length=context_length,
+            executor=executor,
         )
 
-        # 将请求的鉴权参数组合为字典
-        v = {"authorization": authorization, "date": date, "host": self.host}
-        # 拼接鉴权参数，生成url
-        url = self.spark_url + "?" + urlencode(v)
-        # 此处打印出建立连接时候的url,参考本demo的时候可取消上方打印的注释，比对相同参数时生成的url与自己代码生成的url是否一致
-        return url
+    @classmethod
+    def new_client(
+        cls,
+        model_params: ProxyModelParameters,
+        default_executor: Optional[Executor] = None,
+    ) -> "SparkLLMClient":
+        return cls(
+            model=model_params.proxyllm_backend,
+            model_alias=model_params.model_name,
+            context_length=model_params.max_context_size,
+            executor=default_executor,
+        )
+
+    @property
+    def default_model(self) -> str:
+        return self._model
+
+    def sync_generate_stream(
+        self,
+        request: ModelRequest,
+        message_converter: Optional[MessageConverter] = None,
+    ) -> Iterator[ModelOutput]:
+        """
+        reference:
+        https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html#_3-%E8%AF%B7%E6%B1%82%E8%AF%B4%E6%98%8E
+        """
+        request = self.local_covert_message(request, message_converter)
+        messages = request.to_common_messages(support_system_role=False)
+        try:
+            import requests
+        except ImportError as e:
+            raise ValueError(
+                "Could not import python package: requests "
+                "Please install requests by command `pip install requests"
+            ) from e
+
+        data = {
+            "model": self._model,  # 指定请求的模型
+            "messages": messages,
+            "temperature": request.temperature,
+            "stream": True,
+        }
+        header = {
+            "Authorization": f"Bearer {self._api_password}"  # 注意此处替换自己的APIPassword
+        }
+        response = requests.post(self._api_base, headers=header, json=data, stream=True)
+        # 流式响应解析示例
+        response.encoding = "utf-8"
+        try:
+            content = ""
+            # data: {"code":0,"message":"Success","sid":"cha000bf865@dx19307263c06b894532","id":"cha000bf865@dx19307263c06b894532","created":1730991766,"choices":[{"delta":{"role":"assistant","content":"你好"},"index":0}]}
+            # data: [DONE]
+            for line in response.iter_lines(decode_unicode=True):
+                print("llm out:", line)
+                content = content + extract_content(line)
+                yield ModelOutput(text=content, error_code=0)
+        except Exception as e:
+            return ModelOutput(
+                text=f"**LLMServer Generate Error, Please CheckErrorInfo.**: {e}",
+                error_code=1,
+            )

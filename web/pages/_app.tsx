@@ -1,97 +1,139 @@
-import type { AppProps } from 'next/app';
-import React, { useContext, useEffect, useRef } from 'react';
-import SideBar from '@/components/layout/side-bar';
-import { CssVarsProvider, ThemeProvider, useColorScheme } from '@mui/joy/styles';
-import { joyTheme } from '@/defaultTheme';
-import TopProgressBar from '@/components/layout/top-progress-bar';
-import { useTranslation } from 'react-i18next';
 import { ChatContext, ChatContextProvider } from '@/app/chat-context';
-import classNames from 'classnames';
-import '../styles/globals.css';
-import '../nprogress.css';
-import '../app/i18n';
-import { STORAGE_LANG_KEY, STORAGE_THEME_KEY } from '@/utils';
-import { ConfigProvider, theme } from 'antd';
-import zhCN from 'antd/locale/zh_CN';
+import SideBar from '@/components/layout/side-bar';
+import FloatHelper from '@/new-components/layout/FloatHelper';
+import { STORAGE_LANG_KEY, STORAGE_USERINFO_KEY, STORAGE_USERINFO_VALID_TIME_KEY } from '@/utils/constants/index';
+import { App, ConfigProvider, MappingAlgorithm, theme } from 'antd';
 import enUS from 'antd/locale/en_US';
+import zhCN from 'antd/locale/zh_CN';
+import classNames from 'classnames';
+import type { AppProps } from 'next/app';
+import Head from 'next/head';
+import { useRouter } from 'next/router';
+import React, { useContext, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import '../app/i18n';
+import '../nprogress.css';
+import '../styles/globals.css';
+// import TopProgressBar from '@/components/layout/top-progress-bar';
 
-type ThemeMode = ReturnType<typeof useColorScheme>['mode'];
-
-function getDefaultTheme(): ThemeMode {
-  const theme = localStorage.getItem(STORAGE_THEME_KEY) as ThemeMode;
-  if (theme) return theme;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
+const antdDarkTheme: MappingAlgorithm = (seedToken, mapToken) => {
+  return {
+    ...theme.darkAlgorithm(seedToken, mapToken),
+    colorBgBase: '#232734',
+    colorBorder: '#828282',
+    colorBgContainer: '#232734',
+  };
+};
 
 function CssWrapper({ children }: { children: React.ReactElement }) {
+  const { mode } = useContext(ChatContext);
   const { i18n } = useTranslation();
-  const { mode, setMode } = useColorScheme();
-  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const themeMode = getDefaultTheme();
-    setMode(themeMode!);
-  }, []);
-
-  useEffect(() => {
-    if (ref?.current && mode) {
-      ref?.current?.classList?.add(mode);
+    if (mode) {
+      document.body?.classList?.add(mode);
       if (mode === 'light') {
-        ref?.current?.classList?.remove('dark');
+        document.body?.classList?.remove('dark');
       } else {
-        ref?.current?.classList?.remove('light');
+        document.body?.classList?.remove('light');
       }
     }
-  }, [ref, mode]);
+  }, [mode]);
 
   useEffect(() => {
-    i18n.changeLanguage && i18n.changeLanguage(window.localStorage.getItem(STORAGE_LANG_KEY) || 'en');
+    i18n.changeLanguage?.(window.localStorage.getItem(STORAGE_LANG_KEY) || 'zh');
   }, [i18n]);
 
   return (
-    <div ref={ref}>
-      <TopProgressBar />
-      <ChatContextProvider>{children}</ChatContextProvider>
+    <div>
+      {/* <TopProgressBar /> */}
+      {children}
     </div>
   );
 }
 
 function LayoutWrapper({ children }: { children: React.ReactNode }) {
-  const { isMenuExpand } = useContext(ChatContext);
-  const { mode } = useColorScheme();
+  const { isMenuExpand, mode } = useContext(ChatContext);
   const { i18n } = useTranslation();
+  const [isLogin, setIsLogin] = useState(false);
+
+  const router = useRouter();
+
+  // 登录检测
+  const handleAuth = async () => {
+    setIsLogin(false);
+    // 如果已有登录信息，直接展示首页
+    // if (localStorage.getItem(STORAGE_USERINFO_KEY)) {
+    //   setIsLogin(true);
+    //   return;
+    // }
+
+    // MOCK User info
+    const user = {
+      user_channel: `dbgpt`,
+      user_no: `001`,
+      nick_name: `dbgpt`,
+    };
+    if (user) {
+      localStorage.setItem(STORAGE_USERINFO_KEY, JSON.stringify(user));
+      localStorage.setItem(STORAGE_USERINFO_VALID_TIME_KEY, Date.now().toString());
+      setIsLogin(true);
+    }
+  };
+
+  useEffect(() => {
+    handleAuth();
+  }, []);
+
+  if (!isLogin) {
+    return null;
+  }
+
+  const renderContent = () => {
+    if (router.pathname.includes('mobile')) {
+      return <>{children}</>;
+    }
+    return (
+      <div className='flex w-screen h-screen overflow-hidden'>
+        <Head>
+          <meta name='viewport' content='initial-scale=1.0, width=device-width, maximum-scale=1' />
+        </Head>
+        {router.pathname !== '/construct/app/extra' && (
+          <div className={classNames('transition-[width]', isMenuExpand ? 'w-60' : 'w-20', 'hidden', 'md:block')}>
+            <SideBar />
+          </div>
+        )}
+        <div className='flex flex-col flex-1 relative overflow-hidden'>{children}</div>
+        <FloatHelper />
+      </div>
+    );
+  };
 
   return (
     <ConfigProvider
       locale={i18n.language === 'en' ? enUS : zhCN}
       theme={{
         token: {
+          colorPrimary: '#0C75FC',
           borderRadius: 4,
         },
-        algorithm: mode === 'dark' ? theme.darkAlgorithm : undefined,
+        algorithm: mode === 'dark' ? antdDarkTheme : undefined,
       }}
     >
-      <div className="flex w-screen h-screen overflow-hidden">
-        <div className={classNames('transition-[width]', isMenuExpand ? 'w-64' : 'w-20', 'hidden', 'md:block')}>
-          <SideBar />
-        </div>
-        <div className="flex flex-col flex-1 relative overflow-hidden">{children}</div>
-      </div>
+      <App>{renderContent()}</App>
     </ConfigProvider>
   );
 }
 
 function MyApp({ Component, pageProps }: AppProps) {
   return (
-    <ThemeProvider theme={joyTheme}>
-      <CssVarsProvider theme={joyTheme} defaultMode="light">
-        <CssWrapper>
-          <LayoutWrapper>
-            <Component {...pageProps} />
-          </LayoutWrapper>
-        </CssWrapper>
-      </CssVarsProvider>
-    </ThemeProvider>
+    <ChatContextProvider>
+      <CssWrapper>
+        <LayoutWrapper>
+          <Component {...pageProps} />
+        </LayoutWrapper>
+      </CssWrapper>
+    </ChatContextProvider>
   );
 }
 

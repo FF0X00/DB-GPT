@@ -1,36 +1,12 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, Text, String, DateTime
-
-from dbgpt.storage.metadata import BaseDao, Model
+from sqlalchemy import Column, DateTime, Integer, String, Text
 
 from dbgpt.app.openapi.api_v1.feedback.feed_back_model import FeedBackBody
+from dbgpt.serve.feedback.models.models import ServeEntity
+from dbgpt.storage.metadata import BaseDao, Model
 
-
-class ChatFeedBackEntity(Model):
-    __tablename__ = "chat_feed_back"
-    __table_args__ = {
-        "mysql_charset": "utf8mb4",
-        "mysql_collate": "utf8mb4_unicode_ci",
-    }
-    id = Column(Integer, primary_key=True)
-    conv_uid = Column(String(128))
-    conv_index = Column(Integer)
-    score = Column(Integer)
-    ques_type = Column(String(32))
-    question = Column(Text)
-    knowledge_space = Column(String(128))
-    messages = Column(Text)
-    user_name = Column(String(128))
-    gmt_created = Column(DateTime)
-    gmt_modified = Column(DateTime)
-
-    def __repr__(self):
-        return (
-            f"ChatFeekBackEntity(id={self.id}, conv_index='{self.conv_index}', conv_index='{self.conv_index}', "
-            f"score='{self.score}', ques_type='{self.ques_type}', question='{self.question}', knowledge_space='{self.knowledge_space}', "
-            f"messages='{self.messages}', user_name='{self.user_name}', gmt_created='{self.gmt_created}', gmt_modified='{self.gmt_modified}')"
-        )
+ChatFeedBackEntity = ServeEntity
 
 
 class ChatFeedBackDao(BaseDao):

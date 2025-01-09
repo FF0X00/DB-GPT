@@ -69,6 +69,7 @@ import TabItem from '@theme/TabItem';
     {label: 'Chroma', value: 'Chroma'},
     {label: 'Milvus', value: 'Milvus'},
     {label: 'Weaviate', value: 'Weaviate'},
+    {label: 'OceanBase', value: 'OceanBase'},
   ]}>
   <TabItem value="Chroma" label="Chroma">
 
@@ -106,6 +107,21 @@ set ``VECTOR_STORE_TYPE`` in ``.env`` file
 VECTOR_STORE_TYPE=Weaviate
 #WEAVIATE_URL=https://kt-region-m8hcy0wc.weaviate.network
  ```
+ </TabItem>
 
+<TabItem value="OceanBase" label="OceanBase">
+
+set ``VECTOR_STORE_TYPE`` in ``.env`` file
+
+```shell
+OB_HOST=127.0.0.1
+OB_PORT=2881
+OB_USER=root@test
+OB_DATABASE=test
+## Optional
+# OB_PASSWORD=
+## Optional: If {OB_ENABLE_NORMALIZE_VECTOR} is set, the vector stored in OceanBase is normalized.
+# OB_ENABLE_NORMALIZE_VECTOR=True
+```
  </TabItem>
 </Tabs>

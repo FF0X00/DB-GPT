@@ -1,5 +1,8 @@
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+from dbgpt._private.pydantic import model_to_dict
 from dbgpt.app.openapi.api_view_model import Result
 
 
