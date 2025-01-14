@@ -1,5 +1,3 @@
-import { type } from 'os';
-
 export interface ISpace {
   context?: any;
   desc: string;
@@ -10,12 +8,14 @@ export interface ISpace {
   name: string;
   owner: string;
   vector_type: string;
+  domain_type: string;
 }
 export type AddKnowledgeParams = {
   name: string;
   vector_type: string;
   owner: string;
   desc: string;
+  domain_type: string;
 };
 
 export type BaseDocumentParams = {
@@ -54,6 +54,7 @@ export type DocumentParams = {
   source?: string;
   content: string;
   doc_type: string;
+  questions?: string[];
 };
 
 export type IDocument = {
@@ -70,6 +71,7 @@ export type IDocument = {
   space: string;
   status: string;
   vector_ids: string;
+  questions?: string[];
 };
 
 export type IDocumentResponse = {
@@ -78,10 +80,42 @@ export type IDocumentResponse = {
   total: number;
 };
 
+export type IStrategyParameter = {
+  param_name: string;
+  param_type: string;
+  default_value?: string | number;
+  description: string;
+};
+
+export type IChunkStrategyResponse = {
+  strategy: string;
+  name: string;
+  parameters: Array<IStrategyParameter>;
+  suffix: Array<string>;
+  type: Array<string>;
+};
+
+export type IStrategyProps = {
+  chunk_strategy: string;
+  chunk_size?: number;
+  chunk_overlap?: number;
+};
+
+export type ISyncBatchParameter = {
+  doc_id: number;
+  name?: string;
+  chunk_parameters: IStrategyProps;
+};
+
+export type ISyncBatchResponse = {
+  tasks: Array<number>;
+};
+
 export type ChunkListParams = {
   document_id?: string | number;
   page: number;
   page_size: number;
+  content?: string;
 };
 
 export type IChunk = {
@@ -101,6 +135,11 @@ export type IChunkList = {
   total: number;
 };
 
+export type GraphVisResult = {
+  nodes: Array<any>;
+  edges: Array<any>;
+};
+
 export type ArgumentsParams = {
   argument: string;
 };
@@ -109,6 +148,14 @@ export type StepChangeParams = {
   label: 'forward' | 'back' | 'finish';
   spaceName?: string;
   docType?: string;
+  files?: Array<File>;
+  pace?: number;
+};
+
+export type File = {
+  name: string;
+  doc_id: number;
+  status?: string;
 };
 
 export type SummaryParams = {
@@ -116,3 +163,40 @@ export type SummaryParams = {
   model_name: string;
   conv_uid: string;
 };
+
+export interface SearchDocumentParams {
+  doc_name?: string;
+  status?: string;
+}
+export interface AddYuqueProps {
+  doc_name: string;
+  content: string;
+  doc_token: string;
+  doc_type: string;
+  space_name: string;
+  questions?: string[];
+}
+
+export interface RecallTestChunk {
+  chunk_id: number;
+  content: string;
+  metadata: Record<string, any>;
+  score: number;
+}
+
+export interface RecallTestProps {
+  question: string;
+  recall_score_threshold?: number;
+  recall_top_k?: number;
+  recall_retrievers: string[];
+}
+
+export type SpaceConfig = {
+  storage: IStorage;
+};
+
+export type IStorage = Array<{
+  name: string;
+  desc: string;
+  domain_types: Array<{ name: string; desc: string }>;
+}>;

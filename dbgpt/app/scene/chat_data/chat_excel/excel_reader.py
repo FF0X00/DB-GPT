@@ -1,22 +1,25 @@
+import io
+import json
 import logging
-
-import duckdb
 import os
-import sqlparse
-import pandas as pd
+
 import chardet
+import duckdb
 import numpy as np
+import pandas as pd
+import sqlparse
 from pyparsing import (
     CaselessKeyword,
+    Forward,
+    Literal,
+    Optional,
+    Regex,
     Word,
     alphanums,
     delimitedList,
-    Forward,
-    Optional,
-    Literal,
-    Regex,
 )
 
+from dbgpt.util.file_client import FileClient
 from dbgpt.util.pd_utils import csv_colunm_foramt
 from dbgpt.util.string_utils import is_chinese_include_number
 
@@ -221,31 +224,71 @@ def process_function(function):
 
 def is_chinese(text):
     for char in text:
-        if "一" <= char <= "鿿":
+        if "\u4e00" <= char <= "\u9fa5":  # BMP中的常用汉字范围
             return True
     return False
 
 
 class ExcelReader:
-    def __init__(self, file_path):
-        file_name = os.path.basename(file_path)
-        self.file_name_without_extension = os.path.splitext(file_name)[0]
-        encoding, confidence = detect_encoding(file_path)
-        logger.info(f"Detected Encoding: {encoding} (Confidence: {confidence})")
-        self.excel_file_name = file_name
-        self.extension = os.path.splitext(file_name)[1]
+    def __init__(self, conv_uid: str, file_param: str):
+        self.conv_uid = conv_uid
+        self.file_param = file_param
+        if isinstance(file_param, str) and os.path.isabs(file_param):
+            file_name = os.path.basename(file_param)
+            self.file_name_without_extension = os.path.splitext(file_name)[0]
+            encoding, confidence = detect_encoding(file_param)
+
+            self.excel_file_name = file_name
+            self.extension = os.path.splitext(file_name)[1]
+
+            file_info = file_param
+        else:
+            if isinstance(file_param, dict):
+                file_path = file_param.get("file_path", None)
+                if not file_path:
+                    raise ValueError("Not find file path!")
+                else:
+                    file_name = os.path.basename(file_path.replace(f"{conv_uid}_", ""))
+
+            else:
+                temp_obj = json.loads(file_param)
+                file_path = temp_obj.get("file_path", None)
+                file_name = os.path.basename(file_path.replace(f"{conv_uid}_", ""))
+
+            self.file_name_without_extension = os.path.splitext(file_name)[0]
+
+            self.excel_file_name = file_name
+            self.extension = os.path.splitext(file_name)[1]
+
+            file_client = FileClient()
+            file_info = file_client.read_file(
+                conv_uid=self.conv_uid, file_key=file_path
+            )
+
+            result = chardet.detect(file_info)
+            encoding = result["encoding"]
+            confidence = result["confidence"]
+
+        logger.info(
+            f"File Info:{len(file_info)},Detected Encoding: {encoding} (Confidence: {confidence})"
+        )
+
         # read excel file
-        if file_path.endswith(".xlsx") or file_path.endswith(".xls"):
-            df_tmp = pd.read_excel(file_path, index_col=False)
+        if file_name.endswith(".xlsx") or file_name.endswith(".xls"):
+            df_tmp = pd.read_excel(file_info, index_col=False)
             self.df = pd.read_excel(
-                file_path,
+                file_info,
                 index_col=False,
                 converters={i: csv_colunm_foramt for i in range(df_tmp.shape[1])},
             )
-        elif file_path.endswith(".csv"):
-            df_tmp = pd.read_csv(file_path, index_col=False, encoding=encoding)
+        elif file_name.endswith(".csv"):
+            df_tmp = pd.read_csv(
+                file_info if isinstance(file_info, str) else io.BytesIO(file_info),
+                index_col=False,
+                encoding=encoding,
+            )
             self.df = pd.read_csv(
-                file_path,
+                file_info if isinstance(file_info, str) else io.BytesIO(file_info),
                 index_col=False,
                 encoding=encoding,
                 converters={i: csv_colunm_foramt for i in range(df_tmp.shape[1])},
@@ -254,15 +297,35 @@ class ExcelReader:
             raise ValueError("Unsupported file format.")
 
         self.df.replace("", np.nan, inplace=True)
+
+        # 修改的部分
+
+        unnamed_columns_tmp = [
+            col
+            for col in df_tmp.columns
+            if col.startswith("Unnamed") and df_tmp[col].isnull().all()
+        ]
+        df_tmp.drop(columns=unnamed_columns_tmp, inplace=True)
+
+        self.df = self.df[df_tmp.columns.values]
+        #
+
         self.columns_map = {}
         for column_name in df_tmp.columns:
+            self.df[column_name] = self.df[column_name].astype(str)
             self.columns_map.update({column_name: excel_colunm_format(column_name)})
             try:
-                if not pd.api.types.is_datetime64_ns_dtype(self.df[column_name]):
+                self.df[column_name] = pd.to_datetime(self.df[column_name]).dt.strftime(
+                    "%Y-%m-%d"
+                )
+            except ValueError:
+                try:
                     self.df[column_name] = pd.to_numeric(self.df[column_name])
-                self.df[column_name] = self.df[column_name].fillna(0)
-            except Exception as e:
-                print("can't transfor numeric column" + column_name)
+                except ValueError:
+                    try:
+                        self.df[column_name] = self.df[column_name].astype(str)
+                    except Exception:
+                        print("Can't transform column: " + column_name)
 
         self.df = self.df.rename(columns=lambda x: x.strip().replace(" ", "_"))
 
